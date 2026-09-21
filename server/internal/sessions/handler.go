@@ -1,8 +1,10 @@
 package sessions
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -25,10 +27,15 @@ type Handler struct {
 	storage     *minio.Client
 	bucket      string
 	maxFileSize int64
+	transcriber Transcriber
 }
 
-func NewHandler(store *Store, client *minio.Client, bucket string, maxFileSize int64) *Handler {
-	return &Handler{store: store, storage: client, bucket: bucket, maxFileSize: maxFileSize}
+type Transcriber interface {
+	Transcribe(context.Context, string, io.Reader) (string, error)
+}
+
+func NewHandler(store *Store, client *minio.Client, bucket string, maxFileSize int64, transcriber Transcriber) *Handler {
+	return &Handler{store: store, storage: client, bucket: bucket, maxFileSize: maxFileSize, transcriber: transcriber}
 }
 
 func RegisterRoutes(router gin.IRouter, handler *Handler) {
@@ -39,6 +46,7 @@ func RegisterRoutes(router gin.IRouter, handler *Handler) {
 	router.DELETE("/sessions/:id", handler.delete)
 	router.GET("/sessions/:id/media/:mediaId", handler.downloadMedia)
 	router.DELETE("/sessions/:id/media/:mediaId", handler.deleteMedia)
+	router.POST("/sessions/:id/media/:mediaId/transcribe", handler.transcribe)
 }
 
 func (h *Handler) list(c *gin.Context) {
@@ -258,6 +266,65 @@ func (h *Handler) downloadMedia(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", filepath.Base(media.Filename)))
 	c.DataFromReader(http.StatusOK, media.Size, media.ContentType, object, map[string]string{})
+}
+
+func (h *Handler) transcribe(c *gin.Context) {
+	sessionID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	mediaID, err := uuid.Parse(c.Param("mediaId"))
+	if err != nil {
+		errorResponse(c, http.StatusBadRequest, errors.New("invalid media id"))
+		return
+	}
+	media, err := h.store.GetMedia(sessionID, mediaID)
+	if errors.Is(err, ErrNotFound) {
+		errorResponse(c, http.StatusNotFound, err)
+		return
+	}
+	if err != nil {
+		errorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+	if media.Type != "audio" {
+		errorResponse(c, http.StatusBadRequest, errors.New("only audio files can be transcribed"))
+		return
+	}
+	if h.transcriber == nil {
+		errorResponse(c, http.StatusServiceUnavailable, errors.New("transcription is not configured"))
+		return
+	}
+
+	object, err := h.storage.GetObject(c.Request.Context(), h.bucket, media.ObjectKey, minio.GetObjectOptions{})
+	if err != nil {
+		errorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+	defer object.Close()
+	if _, err := object.Stat(); err != nil {
+		errorResponse(c, http.StatusNotFound, err)
+		return
+	}
+	text, err := h.transcriber.Transcribe(c.Request.Context(), media.Filename, object)
+	if err != nil {
+		errorResponse(c, http.StatusBadGateway, err)
+		return
+	}
+	if err := h.store.UpdateMediaTranscription(sessionID, mediaID, text); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			errorResponse(c, http.StatusNotFound, err)
+			return
+		}
+		errorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+	session, err := h.store.Get(sessionID)
+	if err != nil {
+		errorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, h.response(session))
 }
 
 type uploadedFile struct {

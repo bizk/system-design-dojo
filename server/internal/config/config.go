@@ -15,6 +15,8 @@ type Config struct {
 	StorageBucket    string
 	MaxMediaSize     int64
 	ServerPort       string
+	MistralAPIKey    string
+	MistralModel     string
 }
 
 func Load() Config {
@@ -29,6 +31,8 @@ func Load() Config {
 		StorageBucket:    valueOrDefault("STORAGE_BUCKET", "session-media"),
 		MaxMediaSize:     20 * 1024 * 1024,
 		ServerPort:       valueOrDefault("SERVER_PORT", "8080"),
+		MistralAPIKey:    os.Getenv("MISTRAL_API_KEY"),
+		MistralModel:     valueOrDefault("MISTRAL_TRANSCRIPTION_MODEL", "voxtral-mini-latest"),
 	}
 }
 

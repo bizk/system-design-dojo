@@ -10,6 +10,7 @@ import (
 	"github.com/bizk/system-design-dojo/server/internal/migrations"
 	"github.com/bizk/system-design-dojo/server/internal/sessions"
 	"github.com/bizk/system-design-dojo/server/internal/storage"
+	"github.com/bizk/system-design-dojo/server/internal/transcription"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,12 +33,17 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var transcriber sessions.Transcriber
+	if cfg.MistralAPIKey != "" {
+		transcriber = transcription.NewClient(cfg.MistralAPIKey, cfg.MistralModel)
+	}
+
 	router := gin.Default()
 	router.Use(cors())
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
-	sessions.RegisterRoutes(router.Group("/api"), sessions.NewHandler(sessions.NewStore(db), storageClient, cfg.StorageBucket, cfg.MaxMediaSize))
+	sessions.RegisterRoutes(router.Group("/api"), sessions.NewHandler(sessions.NewStore(db), storageClient, cfg.StorageBucket, cfg.MaxMediaSize, transcriber))
 
 	log.Fatal(router.Run(fmt.Sprintf(":%s", cfg.ServerPort)))
 }

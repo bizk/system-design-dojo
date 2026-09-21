@@ -35,3 +35,6 @@ export const deleteSession = (id: string) =>
 
 export const deleteSessionMedia = (sessionId: string, mediaId: string) =>
   request<void>(`/api/sessions/${sessionId}/media/${mediaId}`, { method: 'DELETE' })
+
+export const transcribeSessionMedia = (sessionId: string, mediaId: string) =>
+  request<Session>(`/api/sessions/${sessionId}/media/${mediaId}/transcribe`, { method: 'POST' })

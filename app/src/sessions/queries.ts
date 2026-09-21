@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createSession, deleteSession, deleteSessionMedia, getSession, listSessions, updateSession } from './api'
+import { createSession, deleteSession, deleteSessionMedia, getSession, listSessions, transcribeSessionMedia, updateSession } from './api'
 import type { SessionInput, SessionUpdateInput } from './types'
 
 export const sessionKeys = {
@@ -48,6 +48,17 @@ export const useDeleteSessionMedia = () => {
     mutationFn: ({ sessionId, mediaId }: { sessionId: string; mediaId: string }) => deleteSessionMedia(sessionId, mediaId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.detail(variables.sessionId) })
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all })
+    },
+  })
+}
+
+export const useTranscribeSessionMedia = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sessionId, mediaId }: { sessionId: string; mediaId: string }) => transcribeSessionMedia(sessionId, mediaId),
+    onSuccess: (session) => {
+      queryClient.setQueryData(sessionKeys.detail(session.id), session)
       queryClient.invalidateQueries({ queryKey: sessionKeys.all })
     },
   })

@@ -87,6 +87,19 @@ func (s *Store) DeleteMedia(sessionID, mediaID uuid.UUID) error {
 	return nil
 }
 
+func (s *Store) UpdateMediaTranscription(sessionID, mediaID uuid.UUID, transcription string) error {
+	result := s.db.Model(&Media{}).
+		Where("id = ? AND session_id = ?", mediaID, sessionID).
+		Updates(map[string]any{"transcription": transcription})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func newSession(title, description, content string, status Status) Session {
 	now := time.Now().UTC()
 	return Session{ID: uuid.New(), Title: title, Description: description, Status: status, Content: content, CreatedAt: now, UpdatedAt: now}
