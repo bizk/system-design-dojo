@@ -1,0 +1,70 @@
+services:
+  frontend:
+    build: ./app
+    ports:
+      - "5174:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://server:8080
+    volumes:
+      - ./app:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - server
+
+  server:
+    build: ./server
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-system_design_dojo}?sslmode=disable
+      STORAGE_ENDPOINT: storage:9000
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      STORAGE_USE_SSL: "false"
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-session-media}
+      SERVER_PORT: 8080
+    volumes:
+      - ./server:/app/server
+      - go_modules:/go/pkg/mod
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-system_design_dojo}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - minio_data:/data
+
+volumes:
+  frontend_node_modules:
+  go_modules:
+  postgres_data:
+  minio_data:
